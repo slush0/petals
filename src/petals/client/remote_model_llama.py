@@ -7,12 +7,11 @@ import torch
 import torch.nn as nn
 from hivemind.utils.logging import get_logger
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
-from transformers.models.bloom import (
-    BloomConfig,
-    BloomForCausalLM,
-    BloomForSequenceClassification,
-    BloomModel,
-    BloomPreTrainedModel,
+from transformers.models.llama import (
+    LLaMAConfig,
+    LLaMAForCausalLM,
+    LLaMAModel,
+    LLaMAPreTrainedModel,
 )
 
 from petals.bloom.modeling_utils import LMHead
@@ -24,7 +23,7 @@ from petals.utils.misc import DUMMY
 logger = get_logger(__file__)
 
 
-class DistributedBloomConfig(BloomConfig):
+class DistributedLLaMAConfig(LLaMAConfig):
     """
     A bloom config that contains information about DHT peers.
     To create a distributed model, one must provide dht_prefix and either initial_peers or dht.
@@ -78,22 +77,22 @@ class _LowCPUMemoryMixin:
             low_cpu_mem_usage = True
         return super().from_pretrained(*args, low_cpu_mem_usage=low_cpu_mem_usage, **kwargs)
 
-    from_pretrained.__doc__ = BloomPreTrainedModel.from_pretrained.__doc__.replace(
+    from_pretrained.__doc__ = LLaMAPreTrainedModel.from_pretrained.__doc__.replace(
         "low_cpu_mem_usage(`bool`, *optional*)",
         "low_cpu_mem_usage(`bool`, *optional*, defaults to `True` in Petals)",
     )
 
 
-class DistributedBloomModel(_LowCPUMemoryMixin, BloomModel):
-    """BloomModel, but all transformer layers are hosted by the swarm"""
+class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
+    """LLaMAModel, but all transformer layers are hosted by the swarm"""
 
-    _keys_to_ignore_on_load_missing = BloomModel._keys_to_ignore_on_load_missing + [
+    _keys_to_ignore_on_load_missing = [
         r"^(intermediate_)?prompt_embeddings\.weight$",
     ]
 
-    config_class = DistributedBloomConfig
+    config_class = DistributedLLaMAConfig
 
-    def __init__(self, config: DistributedBloomConfig):
+    def __init__(self, config: DistributedLLaMAConfig):
         assert config.dht_prefix, "Could not find dht_prefix in config, please create model with dht_prefix=..."
         assert config.initial_peers or config.dht, "Please specify initial_peers=list(...) or dht=hivemind.DHT(...)"
 
@@ -175,7 +174,7 @@ class DistributedBloomModel(_LowCPUMemoryMixin, BloomModel):
         attention_mask: Optional[torch.Tensor] = None,
         **kwargs,
     ):
-        assert attention_mask is None, "DistributedBloomModel does not support attention masks right now"
+        assert attention_mask is None, "DistributedLLaMAModel does not support attention masks right now"
 
         for k, v in kwargs.items():
             if not (v is None or v is False):
@@ -222,20 +221,20 @@ class DistributedBloomModel(_LowCPUMemoryMixin, BloomModel):
         )
 
 
-class DistributedBloomForCausalLM(_LowCPUMemoryMixin, RemoteGenerationMixin, BloomForCausalLM):
-    """DistributedBloomForCausalLM, but all transformer layers are hosted by the swarm"""
+class DistributedLLaMAForCausalLM(_LowCPUMemoryMixin, RemoteGenerationMixin, LLaMAForCausalLM):
+    """DistributedLLaMAForCausalLM, but all transformer layers are hosted by the swarm"""
 
     _keys_to_ignore_on_load_missing = (
-        BloomForCausalLM._keys_to_ignore_on_load_missing
-        + DistributedBloomModel._keys_to_ignore_on_load_missing
+        LLaMAForCausalLM._keys_to_ignore_on_load_missing
+        + DistributedLLaMAModel._keys_to_ignore_on_load_missing
         + [r"^lm_head.word_embeddings\.weight$"]  # Missing since they are shared with input embeddings
     )
 
-    config_class = DistributedBloomConfig
+    config_class = DistributedLLaMAConfig
 
-    def __init__(self, config: DistributedBloomConfig):
-        BloomPreTrainedModel.__init__(self, config)
-        self.transformer = DistributedBloomModel(config)
+    def __init__(self, config: DistributedLLaMAConfig):
+        LLaMAPreTrainedModel.__init__(self, config)
+        self.transformer = DistributedLLaMAModel(config)
         self.lm_head = LMHead(config, self.transformer.word_embeddings)
 
         # Initialize weights and apply final processing
@@ -259,21 +258,3 @@ class DistributedBloomForCausalLM(_LowCPUMemoryMixin, RemoteGenerationMixin, Blo
             self.lm_head.word_embeddings.weight[...] = new_lm_head.weight
             self.lm_head.bias[...] = new_lm_head.bias
 
-
-class DistributedBloomForSequenceClassification(_LowCPUMemoryMixin, BloomForSequenceClassification):
-    _keys_to_ignore_on_load_missing = (
-        BloomForSequenceClassification._keys_to_ignore_on_load_missing
-        + DistributedBloomModel._keys_to_ignore_on_load_missing
-    )
-
-    config_class = DistributedBloomConfig
-
-    def __init__(self, config: DistributedBloomConfig):
-        BloomPreTrainedModel.__init__(self, config)
-        self.num_labels = config.num_labels
-
-        self.transformer = DistributedBloomModel(config)
-        self.score = nn.Linear(config.hidden_size, config.num_labels, bias=False).to(config.torch_dtype)
-
-        # Initialize weights and apply final processing
-        self.post_init()
