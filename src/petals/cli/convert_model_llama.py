@@ -9,14 +9,21 @@ from hivemind.utils.logging import get_logger
 from huggingface_hub import Repository
 from tqdm.auto import tqdm
 from transformers.models.bloom.modeling_bloom import BloomModel
-
+from transformers.models.llama.modeling_llama import LLaMAModel
+from transformers.models.llama.tokenization_llama import LLaMATokenizer
 from petals.bloom.from_pretrained import BLOCK_BRANCH_PREFIX, CLIENT_BRANCH
-from petals.client import DistributedBloomConfig
+from petals.client.remote_model_llama import DistributedLLaMAConfig
 
 logger = get_logger(__file__)
 
 DTYPE_MAP = dict(bfloat16=torch.bfloat16, float16=torch.float16, float32=torch.float32, auto="auto")
 
+# FIXME WIP, not working properly yet.
+#
+# 1. Use Transformers from https://github.com/zphang/transformers/tree/llama_push
+# 2. Convert original LLaMA weights to Hugging Face format with
+#       https://github.com/zphang/transformers/blob/llama_push/src/transformers/models/llama/convert_llama_weights_to_hf.py
+# 3. Run: PETALS_IGNORE_DEPENDENCY_VERSION=1 python -m petals.cli.convert_model --model llama-7b --output_path ./llama-7b-petals
 
 def main():
     parser = argparse.ArgumentParser(description="Load bloom layers and convert to 8-bit using torch quantization.")
@@ -48,12 +55,12 @@ def main():
         raise FileExistsError(f"Output path {args.output_path} already exists and is not an empty directory")
 
     logger.info(f"Loading source model {args.model} (this may take a few minutes)")
-    config = DistributedBloomConfig.from_pretrained(
+    config = DistributedLLaMAConfig.from_pretrained(
         args.model, use_auth_token=args.use_auth_token, revision=args.revision
     )
-    config.dht_prefix = args.output_repo
+    config.dht_prefix = args.model #args.output_repo
 
-    model = BloomModel.from_pretrained(
+    model = LLaMAModel.from_pretrained(
         args.model, use_auth_token=args.use_auth_token, revision=args.revision, torch_dtype=DTYPE_MAP[args.torch_dtype]
     )
     if args.resize_token_embeddings:
@@ -61,34 +68,40 @@ def main():
         model.resize_token_embeddings(args.resize_token_embeddings)
         config.vocab_size = args.resize_token_embeddings
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
+    tokenizer = LLaMATokenizer.from_pretrained( #transformers.AutoTokenizer.from_pretrained(
         args.model, use_auth_token=args.use_auth_token, revision=args.revision
     )
     os.makedirs(args.output_path, exist_ok=True)
 
-    repo = Repository(args.output_path, clone_from=args.output_repo, use_auth_token=args.use_auth_token)
-    repo.git_pull()
+    #repo = Repository(args.output_path, clone_from=args.output_repo, use_auth_token=args.use_auth_token)
+    #repo.git_pull()
 
-    transformer_blocks = model.h
+    #transformer_blocks = model.h
+    transformer_blocks = model.decoder.layers
     logger.info(
         f"Saving transformer blocks to {args.output_repo}@{args.block_branch_prefix}0"
         f" - {args.output_repo}@{args.block_branch_prefix}{len(transformer_blocks)}"
     )
+
     for i, block in enumerate(tqdm(transformer_blocks)):
-        repo.git_checkout(args.client_branch, create_branch_ok=True)
-        with repo.commit(
-            commit_message=args.commit_message, branch=args.block_branch_prefix + str(i), track_large_files=True
-        ):
-            torch.save(block.state_dict(), "./pytorch_model.bin")
+        #repo.git_checkout(args.client_branch, create_branch_ok=True)
+        #with repo.commit(
+        #    commit_message=args.commit_message, branch=args.block_branch_prefix + str(i), track_large_files=True
+        #):
+        path = os.path.join(args.output_path, f"pytorch_model_block_{i}.bin")
+        torch.save(block.state_dict(), path)
 
     logger.info(f"Saving client-side modules to {args.output_repo}@{args.client_branch}")
-    repo.git_checkout(args.client_branch, create_branch_ok=True)
-    with repo.commit(commit_message=args.commit_message, branch=args.client_branch, track_large_files=True):
-        model.h = nn.ModuleList()
-        model.save_pretrained(".")
-        tokenizer.save_pretrained(".")
-        config.save_pretrained(".")
 
+    path = os.path.join(args.output_path, "client")
+    os.makedirs(path, exist_ok=True)
+
+    #repo.git_checkout(args.client_branch, create_branch_ok=True)
+    #with repo.commit(commit_message=args.commit_message, branch=args.client_branch, track_large_files=True):
+    model.decoder.layers = nn.ModuleList()
+    model.save_pretrained(path)
+    tokenizer.save_pretrained(path)
+    config.save_pretrained(path)
     logger.info(f"Converted {args.model} and pushed to {args.output_repo}")
 
 
