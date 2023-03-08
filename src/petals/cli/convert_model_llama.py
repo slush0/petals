@@ -23,7 +23,7 @@ DTYPE_MAP = dict(bfloat16=torch.bfloat16, float16=torch.float16, float32=torch.f
 # 1. Use Transformers from https://github.com/zphang/transformers/tree/llama_push
 # 2. Convert original LLaMA weights to Hugging Face format with
 #       https://github.com/zphang/transformers/blob/llama_push/src/transformers/models/llama/convert_llama_weights_to_hf.py
-# 3. Run: PETALS_IGNORE_DEPENDENCY_VERSION=1 python -m petals.cli.convert_model --model llama-7b --output_path ./llama-7b-petals
+# 3. Run: PETALS_IGNORE_DEPENDENCY_VERSION=1 python -m petals.cli.convert_model_llama --model llama-7b --output_path ./llama-7b-petals
 
 def main():
     parser = argparse.ArgumentParser(description="Load bloom layers and convert to 8-bit using torch quantization.")
