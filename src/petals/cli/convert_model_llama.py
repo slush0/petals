@@ -47,13 +47,13 @@ def main():
     if os.path.exists(output_path) and (
         len(os.listdir(output_path)) != 0 or not os.path.isdir(output_path)
     ):
-        raise FileExistsError(f"Output path {args.output_path} already exists and is not an empty directory")
+        raise FileExistsError(f"Output path {output_path} already exists and is not an empty directory")
 
     logger.info(f"Loading source model {args.model} (this may take a few minutes)")
     config = DistributedLLaMAConfig.from_pretrained(
         args.model,
     )
-    config.dht_prefix = args.model #args.output_repo
+    config.dht_prefix = args.model
 
     model = LLaMAModel.from_pretrained(
         args.model, torch_dtype=DTYPE_MAP[args.torch_dtype]
@@ -63,17 +63,16 @@ def main():
         model.resize_token_embeddings(args.resize_token_embeddings)
         config.vocab_size = args.resize_token_embeddings
 
-    tokenizer = LLaMATokenizer.from_pretrained( #transformers.AutoTokenizer.from_pretrained(
+    tokenizer = LLaMATokenizer.from_pretrained(
         args.model,
     )
-    os.makedirs(output_path, exist_ok=True)
 
-    #transformer_blocks = model.h
-    transformer_blocks = model.decoder.layers
+    transformer_blocks = model.layers
     logger.info(
         f"Saving transformer blocks to {output_path}/0 - {output_path}/{len(transformer_blocks)}"
     )
 
+    os.makedirs(output_path, exist_ok=True)
     for i, block in enumerate(tqdm(transformer_blocks)):
         path = os.path.join(output_path, f"pytorch_model_block_{i}.bin")
         torch.save(block.state_dict(), path)
