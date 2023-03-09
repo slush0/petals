@@ -82,7 +82,7 @@ def main():
     path = os.path.join(output_path, "client")
     os.makedirs(path, exist_ok=True)
 
-    model.decoder.layers = nn.ModuleList()
+    model.layers = nn.ModuleList()
     model.save_pretrained(path)
     tokenizer.save_pretrained(path)
     config.save_pretrained(path)
