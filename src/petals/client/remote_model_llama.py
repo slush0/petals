@@ -96,10 +96,10 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
         assert config.dht_prefix, "Could not find dht_prefix in config, please create model with dht_prefix=..."
         assert config.initial_peers or config.dht, "Please specify initial_peers=list(...) or dht=hivemind.DHT(...)"
 
-        n_layer, config.n_layer = config.n_layer, 0  # temporarily set n_layer to 0 to prevent layer initialization
+        num_hidden_layers, config.num_hidden_layers = config.num_hidden_layers, 0  # temporarily set num_hidden_layers to 0 to prevent layer initialization
         super().__init__(config)
-        assert len(self.h) == 0
-        config.n_layer = n_layer
+        assert len(self.layers) == 0
+        config.num_hidden_layers = num_hidden_layers
 
         dht = (
             config.dht
@@ -107,7 +107,7 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
             else hivemind.DHT(
                 initial_peers=config.initial_peers,
                 client_mode=True,
-                num_workers=n_layer,
+                num_workers=num_hidden_layers,
                 startup_timeout=config.daemon_startup_timeout,
                 start=True,
                 use_relay=True,
@@ -115,11 +115,13 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
             )
         )
         assert isinstance(dht, hivemind.DHT) and dht.is_alive(), "dht must be a running hivemind.DHT instance"
-        self.h = RemoteSequential(
+        self.layers = None # FIXME
+        """
+        RemoteSequential(
             config,
             dht,
             config.dht_prefix,
-        )
+        )"""
 
         # Forbid accumulate grads for embeddings and layernorm
         self.set_requires_grad(False)
@@ -130,7 +132,7 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
             self.prefix_tokens = torch.arange(self.pre_seq_len).long()
 
             with force_non_empty_weights():
-                if self.word_embeddings_layernorm.weight.dtype in (torch.float16, torch.bfloat16):
+                if self.norm.weight.dtype in (torch.float16, torch.bfloat16):
                     logger.info(
                         "Prompt embeddings and their optimizer statistics will be kept in float32 "
                         "to increase ptune quality"
@@ -152,19 +154,19 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
 
     def get_prompt(self, batch_size):
         prefix_tokens = self.prefix_tokens.unsqueeze(0).expand(batch_size, -1)
-        prefix_tokens = prefix_tokens.to(self.word_embeddings.weight.device)
+        prefix_tokens = prefix_tokens.to(self.embed_tokens.weight.device)
         prompts = self.prompt_embeddings(prefix_tokens)
 
         if self.config.tuning_mode == "deep_ptune":
             intermediate_prompts = self.intermediate_prompt_embeddings(prefix_tokens)
             intermediate_prompts = intermediate_prompts.view(
-                batch_size, self.pre_seq_len, len(self.h), self.config.hidden_size  # TODO: should be len(self.h) - 1
+                batch_size, self.pre_seq_len, len(self.layers), self.config.hidden_size  # TODO: should be len(self.weights) - 1
             )
             intermediate_prompts = intermediate_prompts.permute([2, 0, 1, 3])
         else:
             intermediate_prompts = DUMMY
 
-        dtype = self.word_embeddings.weight.dtype
+        dtype = self.embed_tokens.weight.dtype
         return prompts.to(dtype), intermediate_prompts.to(dtype)
 
     def forward(
@@ -191,20 +193,20 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
         if inputs_embeds is None:
-            inputs_embeds = self.word_embeddings(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids)
 
         if self.config.tuning_mode and "ptune" in self.config.tuning_mode:
             batch_size = inputs_embeds.shape[0]
             prompts, intermediate_prompts = self.get_prompt(batch_size)
             inputs_embeds = torch.cat([prompts, inputs_embeds], dim=1)
 
-        hidden_states = self.word_embeddings_layernorm(inputs_embeds)
+        hidden_states = self.norm(inputs_embeds)
         output_shape = input_shape + (hidden_states.size(-1),)
 
         if self.config.tuning_mode and "ptune" in self.config.tuning_mode:
-            hidden_states = self.h(hidden_states, prompts=intermediate_prompts)
+            hidden_states = self.layers(hidden_states, prompts=intermediate_prompts)
         else:
-            hidden_states = self.h(hidden_states)
+            hidden_states = self.layers(hidden_states)
 
         # Remove prefix
         if self.config.tuning_mode and "ptune" in self.config.tuning_mode:
@@ -227,21 +229,21 @@ class DistributedLLaMAForCausalLM(_LowCPUMemoryMixin, RemoteGenerationMixin, LLa
     _keys_to_ignore_on_load_missing = (
         LLaMAForCausalLM._keys_to_ignore_on_load_missing
         + DistributedLLaMAModel._keys_to_ignore_on_load_missing
-        + [r"^lm_head.word_embeddings\.weight$"]  # Missing since they are shared with input embeddings
+        + [r"^lm_head.embed_tokens\.weight$"]  # Missing since they are shared with input embeddings
     )
-
+    print(_keys_to_ignore_on_load_missing)
     config_class = DistributedLLaMAConfig
 
     def __init__(self, config: DistributedLLaMAConfig):
         LLaMAPreTrainedModel.__init__(self, config)
         self.transformer = DistributedLLaMAModel(config)
-        self.lm_head = LMHead(config, self.transformer.word_embeddings)
+        self.lm_head = LMHead(config, self.transformer.embed_tokens)
 
         # Initialize weights and apply final processing
         self.post_init()
 
     def get_input_embeddings(self):
-        return self.transformer.word_embeddings
+        return self.transformer.embed_tokens
 
     def get_output_embeddings(self):
         if self.config.tie_word_embeddings:
@@ -250,7 +252,7 @@ class DistributedLLaMAForCausalLM(_LowCPUMemoryMixin, RemoteGenerationMixin, LLa
 
     def set_input_embeddings(self, new_embeddings: nn.Embedding):
         assert isinstance(new_embeddings, nn.Embedding)
-        self.transformer.word_embeddings = self.lm_head.word_embeddings = new_embeddings
+        self.transformer.embed_tokens = self.lm_head.word_embeddings = new_embeddings
         assert self.lm_head.bias is None or len(self.lm_head.bias) == new_embeddings.num_embeddings
 
     def set_output_embeddings(self, new_lm_head: nn.Linear):
