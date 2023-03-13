@@ -96,6 +96,9 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
         assert config.dht_prefix, "Could not find dht_prefix in config, please create model with dht_prefix=..."
         assert config.initial_peers or config.dht, "Please specify initial_peers=list(...) or dht=hivemind.DHT(...)"
 
+        # For compatibility with RemoteSequential
+        config.n_layer = config.num_hidden_layers
+
         num_hidden_layers, config.num_hidden_layers = config.num_hidden_layers, 0  # temporarily set num_hidden_layers to 0 to prevent layer initialization
         super().__init__(config)
         assert len(self.layers) == 0
@@ -115,13 +118,13 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
             )
         )
         assert isinstance(dht, hivemind.DHT) and dht.is_alive(), "dht must be a running hivemind.DHT instance"
-        self.layers = None # FIXME
-        """
-        RemoteSequential(
+
+        self.layers = RemoteSequential(
             config,
             dht,
             config.dht_prefix,
-        )"""
+        )
+        self.h = self.layers # For compatibility with RemoteGeneration
 
         # Forbid accumulate grads for embeddings and layernorm
         self.set_requires_grad(False)
@@ -231,7 +234,7 @@ class DistributedLLaMAForCausalLM(_LowCPUMemoryMixin, RemoteGenerationMixin, LLa
         + DistributedLLaMAModel._keys_to_ignore_on_load_missing
         + [r"^lm_head.embed_tokens\.weight$"]  # Missing since they are shared with input embeddings
     )
-    print(_keys_to_ignore_on_load_missing)
+
     config_class = DistributedLLaMAConfig
 
     def __init__(self, config: DistributedLLaMAConfig):
