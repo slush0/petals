@@ -38,7 +38,7 @@ class RemoteSequential(nn.Module):
         print("PREFIX", self.dht_prefix)
         self.p2p = RemoteExpertWorker.run_coroutine(dht.replicate_p2p()) if p2p is None else p2p
 
-        num_blocks = self.config.n_layer if sequence_manager is None else len(sequence_manager)
+        num_blocks = self.config.num_hidden_layers if sequence_manager is None else len(sequence_manager)
         block_uids = tuple(f"{config.dht_prefix}{UID_DELIMITER}{i}" for i in range(num_blocks))
         if sequence_manager is None:
             logger.debug(f"Creating new sequence manager for block uids: {block_uids}")
