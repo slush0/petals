@@ -40,8 +40,6 @@ def load_pretrained_block(
 ) -> WrappedLlamaBlock:
     """Load one BLOOM block from a converted model. See convert_model.py (or README.md) on how to convert it."""
 
-    print(converted_model_name_or_path)
-    print(block_index)
     if config is None:
         config = LlamaConfig.from_pretrained(converted_model_name_or_path)
     if cache_dir is None:
@@ -85,7 +83,6 @@ def _load_state_dict(
     # First, try to find the weights locally
     try:
         archive_file = os.path.join(pretrained_model_name_or_path, "blocks", revision)
-        print("LOADING", archive_file)
         return torch.load(archive_file, map_location="cpu")
     except Exception:
         logger.debug(

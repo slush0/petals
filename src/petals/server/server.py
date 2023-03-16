@@ -15,7 +15,7 @@ from hivemind.moe.server.layers import add_custom_models_from_file
 from hivemind.moe.server.runtime import Runtime
 from hivemind.proto.runtime_pb2 import CompressionType
 from hivemind.utils.logging import get_logger
-from transformers import BloomConfig
+from transformers import LlamaConfig
 
 from petals.bloom.from_pretrained import DTYPE_MAP, load_pretrained_block
 from petals.constants import PUBLIC_INITIAL_PEERS
@@ -112,12 +112,12 @@ class Server:
         self.request_timeout = request_timeout
         self.session_timeout, self.step_timeout = session_timeout, step_timeout
 
-        self.block_config = BloomConfig.from_pretrained(
+        self.block_config = LlamaConfig.from_pretrained(
             converted_model_name_or_path,
             use_auth_token=use_auth_token,
             revision=revision,
         )
-        self.module_uids = [f"{self.prefix}.{block_index}" for block_index in range(self.block_config.n_layer)]
+        self.module_uids = [f"{self.prefix}.{block_index}" for block_index in range(self.block_config.num_hidden_layers)]
 
         if dht_client_mode is None:
             is_reachable = check_direct_reachability(initial_peers=initial_peers, use_relay=False, **kwargs)
@@ -126,7 +126,7 @@ class Server:
         self.dht = DHT(
             initial_peers=initial_peers,
             start=True,
-            num_workers=self.block_config.n_layer,
+            num_workers=self.block_config.num_hidden_layers,
             use_relay=use_relay,
             use_auto_relay=use_auto_relay,
             client_mode=dht_client_mode,
@@ -251,7 +251,7 @@ class Server:
             f"Server will fill all your GPU memory with {num_blocks} transformer blocks. "
             f"If you want to leave some free GPU memory, please specify a lesser --num_blocks manually"
         )
-        return min(num_blocks, self.block_config.n_layer)
+        return min(num_blocks, self.block_config.num_hidden_layers)
 
     def run(self):
         while True:
@@ -360,7 +360,7 @@ class ModuleContainer(threading.Thread):
         dht: DHT,
         prefix: str,
         converted_model_name_or_path: str,
-        block_config: BloomConfig,
+        block_config: LlamaConfig,
         attn_cache_size: int,
         alloc_timeout: float,
         throughput: float,
@@ -390,6 +390,7 @@ class ModuleContainer(threading.Thread):
             expiration=expiration,
             daemon=True,
         )
+        print(prefix)
         joining_announcer.start()
         logger.info(f"Announced that blocks {block_indices} are joining")
 

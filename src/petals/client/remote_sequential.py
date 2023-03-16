@@ -35,6 +35,7 @@ class RemoteSequential(nn.Module):
         self.config = config
         self.dht = dht
         self.dht_prefix = dht_prefix or config.dht_prefix
+        print("PREFIX", self.dht_prefix)
         self.p2p = RemoteExpertWorker.run_coroutine(dht.replicate_p2p()) if p2p is None else p2p
 
         num_blocks = self.config.n_layer if sequence_manager is None else len(sequence_manager)

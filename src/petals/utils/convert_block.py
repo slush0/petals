@@ -8,7 +8,7 @@ import tensor_parallel as tp
 import torch
 import torch.nn as nn
 from hivemind.utils.logging import get_logger, use_hivemind_log_handler
-from tensor_parallel.slicing_configs import get_bloom_config
+# from tensor_parallel.slicing_configs import get_bloom_config
 from transformers import BloomConfig
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
@@ -102,17 +102,16 @@ def replace_8bit_linear(model: nn.Module, threshold=6.0):
 def make_tensor_parallel(
     block: WrappedLlamaBlock, model_config: BloomConfig, devices: Sequence[torch.device], output_device: torch.device
 ):
-    tp_config = get_bloom_config(model_config, devices)
-    del tp_config.state_rules[re.compile(".*word_embeddings.weight$")]
-    tp_block = tp.TensorParallel(block, devices, config=tp_config, output_device=output_device, delay_init=True)
+    #tp_config = get_bloom_config(model_config, devices)
+    #del tp_config.state_rules[re.compile(".*word_embeddings.weight$")]
+    tp_block = tp.TensorParallel(block, devices, config=model_config, output_device=output_device, delay_init=True)
     total_heads = 0
     for tp_shard in tp_block.module_shards:
         for submodule in tp_shard.modules():
             if isinstance(submodule, LlamaDecoderLayer):
                 total_heads += submodule.self_attn.num_heads
-    print(total_heads)
-    print(model_config.n_head)
-    assert total_heads == model_config.n_head
+
+    assert total_heads == model_config.num_attention_heads
     return tp_block
 
 
