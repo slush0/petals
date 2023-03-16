@@ -8,10 +8,10 @@ import torch.nn as nn
 from hivemind.utils.logging import get_logger
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 from transformers.models.llama import (
-    LLaMAConfig,
-    LLaMAForCausalLM,
-    LLaMAModel,
-    LLaMAPreTrainedModel,
+    LlamaConfig,
+    LlamaForCausalLM,
+    LlamaModel,
+    LlamaPreTrainedModel,
 )
 
 from petals.bloom.modeling_utils import LMHead
@@ -23,7 +23,7 @@ from petals.utils.misc import DUMMY
 logger = get_logger(__file__)
 
 
-class DistributedLLaMAConfig(LLaMAConfig):
+class DistributedLlamaConfig(LlamaConfig):
     """
     A bloom config that contains information about DHT peers.
     To create a distributed model, one must provide dht_prefix and either initial_peers or dht.
@@ -77,22 +77,22 @@ class _LowCPUMemoryMixin:
             low_cpu_mem_usage = True
         return super().from_pretrained(*args, low_cpu_mem_usage=low_cpu_mem_usage, **kwargs)
 
-    from_pretrained.__doc__ = LLaMAPreTrainedModel.from_pretrained.__doc__.replace(
+    from_pretrained.__doc__ = LlamaPreTrainedModel.from_pretrained.__doc__.replace(
         "low_cpu_mem_usage(`bool`, *optional*)",
         "low_cpu_mem_usage(`bool`, *optional*, defaults to `True` in Petals)",
     )
 
 
-class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
-    """LLaMAModel, but all transformer layers are hosted by the swarm"""
+class DistributedLlamaModel(_LowCPUMemoryMixin, LlamaModel):
+    """LlamaModel, but all transformer layers are hosted by the swarm"""
 
     _keys_to_ignore_on_load_missing = [
         r"^(intermediate_)?prompt_embeddings\.weight$",
     ]
 
-    config_class = DistributedLLaMAConfig
+    config_class = DistributedLlamaConfig
 
-    def __init__(self, config: DistributedLLaMAConfig):
+    def __init__(self, config: DistributedLlamaConfig):
         assert config.dht_prefix, "Could not find dht_prefix in config, please create model with dht_prefix=..."
         assert config.initial_peers or config.dht, "Please specify initial_peers=list(...) or dht=hivemind.DHT(...)"
 
@@ -179,7 +179,7 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
         attention_mask: Optional[torch.Tensor] = None,
         **kwargs,
     ):
-        assert attention_mask is None, "DistributedLLaMAModel does not support attention masks right now"
+        assert attention_mask is None, "DistributedLlamaModel does not support attention masks right now"
 
         for k, v in kwargs.items():
             if not (v is None or v is False):
@@ -226,20 +226,20 @@ class DistributedLLaMAModel(_LowCPUMemoryMixin, LLaMAModel):
         )
 
 
-class DistributedLLaMAForCausalLM(_LowCPUMemoryMixin, RemoteGenerationMixin, LLaMAForCausalLM):
-    """DistributedLLaMAForCausalLM, but all transformer layers are hosted by the swarm"""
+class DistributedLlamaForCausalLM(_LowCPUMemoryMixin, RemoteGenerationMixin, LlamaForCausalLM):
+    """DistributedLlamaForCausalLM, but all transformer layers are hosted by the swarm"""
 
     _keys_to_ignore_on_load_missing = (
-        LLaMAForCausalLM._keys_to_ignore_on_load_missing
-        + DistributedLLaMAModel._keys_to_ignore_on_load_missing
+        LlamaForCausalLM._keys_to_ignore_on_load_missing
+        + DistributedLlamaModel._keys_to_ignore_on_load_missing
         + [r"^lm_head.embed_tokens\.weight$"]  # Missing since they are shared with input embeddings
     )
 
-    config_class = DistributedLLaMAConfig
+    config_class = DistributedLlamaConfig
 
-    def __init__(self, config: DistributedLLaMAConfig):
-        LLaMAPreTrainedModel.__init__(self, config)
-        self.transformer = DistributedLLaMAModel(config)
+    def __init__(self, config: DistributedLlamaConfig):
+        LlamaPreTrainedModel.__init__(self, config)
+        self.transformer = DistributedLlamaModel(config)
         self.lm_head = LMHead(config, self.transformer.embed_tokens)
 
         # Initialize weights and apply final processing

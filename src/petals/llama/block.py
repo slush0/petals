@@ -8,13 +8,13 @@ from typing import Optional, Tuple
 
 import torch.nn.quantized.dynamic.modules.linear
 import transformers
-from transformers.models.bloom.modeling_bloom import BloomBlock, _expand_mask, _make_causal_mask, build_alibi_tensor
+from transformers.models.llama.modeling_llama import LLaMADecoderLayer, _expand_mask, _make_causal_mask, build_alibi_tensor
 
 if not os.getenv("PETALS_IGNORE_DEPENDENCY_VERSION"):
     assert transformers.__version__.startswith("4.25."), "Please install transformers 4.25.1"
 
 
-class WrappedBloomBlock(BloomBlock):
+class WrappedLLaMABlock(LLaMADecoderLayer):
     def forward(
         self,
         hidden_states: torch.Tensor,

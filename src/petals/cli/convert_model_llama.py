@@ -18,10 +18,10 @@ from hivemind.utils.logging import get_logger
 from huggingface_hub import Repository
 from tqdm.auto import tqdm
 from transformers.models.bloom.modeling_bloom import BloomModel
-from transformers.models.llama.modeling_llama import LLaMAModel
-from transformers.models.llama.tokenization_llama import LLaMATokenizer
+from transformers.models.llama.modeling_llama import LlamaModel
+from transformers.models.llama.tokenization_llama import LlamaTokenizer
 from petals.bloom.from_pretrained import BLOCK_BRANCH_PREFIX, CLIENT_BRANCH
-from petals.client.remote_model_llama import DistributedLLaMAConfig
+from petals.client.remote_model_llama import DistributedLlamaConfig
 
 logger = get_logger(__file__)
 
@@ -50,12 +50,12 @@ def main():
         raise FileExistsError(f"Output path {output_path} already exists and is not an empty directory")
 
     logger.info(f"Loading source model {args.model} (this may take a few minutes)")
-    config = DistributedLLaMAConfig.from_pretrained(
+    config = DistributedLlamaConfig.from_pretrained(
         args.model,
     )
     config.dht_prefix = args.model
 
-    model = LLaMAModel.from_pretrained(
+    model = LlamaModel.from_pretrained(
         args.model, torch_dtype=DTYPE_MAP[args.torch_dtype]
     )
     if args.resize_token_embeddings:
@@ -63,29 +63,28 @@ def main():
         model.resize_token_embeddings(args.resize_token_embeddings)
         config.vocab_size = args.resize_token_embeddings
 
-    tokenizer = LLaMATokenizer.from_pretrained(
+    tokenizer = LlamaTokenizer.from_pretrained(
         args.model,
     )
 
     transformer_blocks = model.layers
     logger.info(
-        f"Saving transformer blocks to {output_path}/0 - {output_path}/{len(transformer_blocks)}"
+        f"Saving transformer blocks to {output_path}/blocks/0 - {output_path}/blocks/{len(transformer_blocks)}"
     )
 
-    os.makedirs(output_path, exist_ok=True)
-    for i, block in enumerate(tqdm(transformer_blocks)):
-        path = os.path.join(output_path, f"pytorch_model_block_{i}.bin")
-        torch.save(block.state_dict(), path)
-
-    logger.info(f"Saving client-side modules to {output_path}/client")
-
-    path = os.path.join(output_path, "client")
+    path = os.path.join(output_path, "blocks")
     os.makedirs(path, exist_ok=True)
+    for i, block in enumerate(tqdm(transformer_blocks)):
+        torch.save(block.state_dict(), os.path.join(path, f"block_{i}.bin"))
+
+    logger.info(f"Saving client-side modules to {output_path}")
+
+    os.makedirs(output_path, exist_ok=True)
 
     model.layers = nn.ModuleList()
-    model.save_pretrained(path)
-    tokenizer.save_pretrained(path)
-    config.save_pretrained(path)
+    model.save_pretrained(output_path)
+    tokenizer.save_pretrained(output_path)
+    config.save_pretrained(output_path)
     logger.info(f"Converted {args.model} and stored to {output_path}")
 
 

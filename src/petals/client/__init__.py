@@ -5,11 +5,10 @@ from petals.client.remote_model import (
     DistributedBloomForSequenceClassification,
     DistributedBloomModel,
 )
-# if os.getenv("PETALS_LLAMA"):
 from petals.client.remote_model_llama import (
-    DistributedLLaMAConfig,
-    DistributedLLaMAForCausalLM,
-    DistributedLLaMAModel,
+    DistributedLlamaConfig,
+    DistributedLlamaForCausalLM,
+    DistributedLlamaModel,
 )
 from petals.client.remote_sequential import RemoteSequential, RemoteTransformerBlock
 from petals.client.routing.sequence_manager import RemoteSequenceManager
