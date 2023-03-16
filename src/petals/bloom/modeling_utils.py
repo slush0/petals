@@ -12,7 +12,7 @@ import torch.nn.functional as F
 import torch.utils.checkpoint
 from hivemind import get_logger
 from torch import nn
-from transformers import BloomConfig
+from transformers import LlamaConfig
 
 logger = get_logger(__name__)
 
@@ -24,7 +24,7 @@ class LMHead(nn.Module):
     In addition, it provides an effcient way to deal with half-precision word embeddings on CPU.
     """
 
-    def __init__(self, config: BloomConfig, word_embeddings: nn.Embedding):
+    def __init__(self, config: LlamaConfig, word_embeddings: nn.Embedding):
         super().__init__()
         self.word_embeddings = word_embeddings
 

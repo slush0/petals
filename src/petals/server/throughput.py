@@ -11,7 +11,7 @@ import torch
 from hivemind.utils.logging import get_logger
 from transformers import BloomConfig
 
-from petals.bloom.block import WrappedBloomBlock
+from petals.bloom.block import WrappedLlamaBlock
 from petals.server.block_utils import resolve_block_dtype
 from petals.utils.convert_block import convert_block
 from petals.utils.disk_cache import DEFAULT_CACHE_DIR
@@ -148,7 +148,7 @@ def measure_compute_rps(
     if not tensor_parallel_devices:
         tensor_parallel_devices = (device,)
     with torch.inference_mode():
-        block = WrappedBloomBlock(config).to(dtype)
+        block = WrappedLlamaBlock(config).to(dtype)
         block = convert_block(block, config, tensor_parallel_devices, device, load_in_8bit=load_in_8bit, freeze=True)
 
         cache = None

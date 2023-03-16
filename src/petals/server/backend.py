@@ -12,8 +12,8 @@ from hivemind.moe.server.module_backend import ModuleBackend
 from hivemind.utils import get_logger
 from tensor_parallel import TensorParallel
 from tensor_parallel.tensor_parallel import PerDeviceTensors
-from transformers import BloomConfig
-from transformers.models.bloom.modeling_bloom import BloomAttention
+from transformers import LlamaConfig
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
 from petals.data_structures import InferenceMetadata
 from petals.server.memory_cache import Handle, MemoryCache
@@ -53,8 +53,8 @@ class TransformerBackend(ModuleBackend):
         self.shard_num_heads = []
         for shard in self.module.module_shards:
             for submodule in shard.modules():
-                if isinstance(submodule, BloomAttention):
-                    self.shard_num_heads.append(submodule.num_heads)
+                if isinstance(submodule, LlamaDecoderLayer):
+                    self.shard_num_heads.append(submodule.self_attn.num_heads)
         assert len(self.shard_num_heads) == len(self.module.devices) and sum(self.shard_num_heads) == config.n_head
 
         self.inference_schema = (

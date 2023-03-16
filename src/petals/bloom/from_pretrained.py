@@ -10,15 +10,16 @@ from __future__ import annotations
 
 import itertools
 import time
+import os
 from typing import Optional, OrderedDict, Union
 
 import torch
 from hivemind.utils.logging import get_logger
 from transformers.modeling_utils import WEIGHTS_NAME
-from transformers.models.bloom.configuration_bloom import BloomConfig
+from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.utils import get_file_from_repo
 
-from petals.bloom.block import WrappedBloomBlock
+from petals.bloom.block import WrappedLlamaBlock
 from petals.server.block_utils import get_block_size
 from petals.utils.disk_cache import DEFAULT_CACHE_DIR, allow_cache_reads, allow_cache_writes, free_disk_space_for
 
@@ -31,20 +32,22 @@ BLOCK_BRANCH_PREFIX = "block_"
 def load_pretrained_block(
     converted_model_name_or_path: str,
     block_index: int,
-    config: Optional[BloomConfig] = None,
+    config: Optional[LlamaConfig] = None,
     torch_dtype: Union[torch.dtype, str] = "auto",
     use_auth_token: Optional[str] = None,
     cache_dir: Optional[str] = None,
     max_disk_space: Optional[int] = None,
-) -> WrappedBloomBlock:
+) -> WrappedLlamaBlock:
     """Load one BLOOM block from a converted model. See convert_model.py (or README.md) on how to convert it."""
 
+    print(converted_model_name_or_path)
+    print(block_index)
     if config is None:
-        config = BloomConfig.from_pretrained(converted_model_name_or_path, use_auth_token=use_auth_token)
+        config = LlamaConfig.from_pretrained(converted_model_name_or_path)
     if cache_dir is None:
         cache_dir = DEFAULT_CACHE_DIR
 
-    block = WrappedBloomBlock(config)
+    block = WrappedLlamaBlock(config)
     state_dict = _load_state_dict(
         converted_model_name_or_path,
         block_index,
@@ -53,7 +56,6 @@ def load_pretrained_block(
         cache_dir=cache_dir,
         max_disk_space=max_disk_space,
     )
-
     if torch_dtype == "auto":
         with torch.no_grad():
             for name, param in block.named_parameters():
@@ -71,33 +73,26 @@ def load_pretrained_block(
 def _load_state_dict(
     pretrained_model_name_or_path: str,
     block_index: int,
-    config: BloomConfig,
+    config: LlamaConfig,
     *,
     use_auth_token: Optional[str] = None,
     cache_dir: str,
     max_disk_space: Optional[int] = None,
     min_backoff: float = 5,
 ) -> OrderedDict[str, torch.Tensor]:
-    revision = BLOCK_BRANCH_PREFIX + str(block_index)
+    revision = BLOCK_BRANCH_PREFIX + str(block_index) + '.bin'
 
     # First, try to find the weights locally
     try:
-        with allow_cache_reads(cache_dir):
-            archive_file = get_file_from_repo(
-                pretrained_model_name_or_path,
-                filename=WEIGHTS_NAME,
-                revision=revision,
-                use_auth_token=use_auth_token,
-                cache_dir=cache_dir,
-                local_files_only=True,
-            )
-            if archive_file is not None:
-                return torch.load(archive_file, map_location="cpu")
+        archive_file = os.path.join(pretrained_model_name_or_path, "blocks", revision)
+        print("LOADING", archive_file)
+        return torch.load(archive_file, map_location="cpu")
     except Exception:
         logger.debug(
-            f"Failed to load block {block_index} from cache. The block will be downloaded again", exc_info=True
+            f"Failed to load block {block_index} from cache.", exc_info=True
         )
 
+    raise NotImplemented("Downloading weights for Llama is not implemented.")
     # If not found, ensure that we have enough disk space to download them (maybe remove something)
     for attempt_no in itertools.count():
         try:

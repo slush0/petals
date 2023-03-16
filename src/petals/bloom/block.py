@@ -8,13 +8,13 @@ from typing import Optional, Tuple
 
 import torch.nn.quantized.dynamic.modules.linear
 import transformers
-from transformers.models.bloom.modeling_bloom import BloomBlock, _expand_mask, _make_causal_mask, build_alibi_tensor
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer, _expand_mask, _make_causal_mask
 
 if not os.getenv("PETALS_IGNORE_DEPENDENCY_VERSION"):
     assert transformers.__version__.startswith("4.25."), "Please install transformers 4.25.1"
 
 
-class WrappedBloomBlock(BloomBlock):
+class WrappedLlamaBlock(LlamaDecoderLayer):
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -29,11 +29,9 @@ class WrappedBloomBlock(BloomBlock):
         past_length = 0 if layer_past is None else layer_past[0].shape[-1]
         seq_length_with_past = seq_length + past_length
         attention_mask = torch.ones((batch_size, seq_length_with_past), device=hidden_states.device)
-        if alibi is None:
-            alibi = build_alibi_tensor(attention_mask, num_heads=self.num_heads, dtype=hidden_states.dtype)
         attention_mask = self._prepare_attn_mask(attention_mask, (batch_size, seq_length), past_length)
         return super().forward(
-            hidden_states, *args, attention_mask=attention_mask, alibi=alibi, layer_past=layer_past, **kwargs
+            hidden_states, *args, attention_mask=attention_mask, layer_past=layer_past, **kwargs
         )
 
     def _prepare_attn_mask(
