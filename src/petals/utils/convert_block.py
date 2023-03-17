@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from hivemind.utils.logging import get_logger, use_hivemind_log_handler
 # from tensor_parallel.slicing_configs import get_bloom_config
-from transformers import BloomConfig
+from transformers import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
 from petals.bloom.block import WrappedLlamaBlock
@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 
 def convert_block(
     block: WrappedLlamaBlock,
-    config: BloomConfig,
+    config: LlamaConfig,
     tensor_parallel_devices: Sequence[torch.device],
     output_device: torch.device,
     load_in_8bit: bool,
@@ -42,6 +42,7 @@ def convert_block(
     :return: a module that acts like the original block, but runs with all specified optimizations
 
     """
+    #torch.save(block, open("shard.bin", "wb"))
     if freeze:
         for param in block.parameters():
             param.requires_grad = False
@@ -50,10 +51,11 @@ def convert_block(
 
     if load_in_8bit:
         block = replace_8bit_linear(block, threshold=threshold)
-
+    x = next(block.parameters())
+    print("convert block1", x.dtype)
     for shard, device in zip(block.module_shards, block.devices):
         shard.to(device)
-
+    print("convert block2", x.dtype)
     return block
 
 
@@ -96,15 +98,15 @@ def replace_8bit_linear(model: nn.Module, threshold=6.0):
                 module.weight.data, requires_grad=False, has_fp16_weights=False
             ).to(module.weight.dtype)
             model._modules[n].bias = module.bias
+
     return model
 
 
 def make_tensor_parallel(
-    block: WrappedLlamaBlock, model_config: BloomConfig, devices: Sequence[torch.device], output_device: torch.device
+    block: WrappedLlamaBlock, model_config: LlamaConfig, devices: Sequence[torch.device], output_device: torch.device
 ):
-    #tp_config = get_bloom_config(model_config, devices)
-    #del tp_config.state_rules[re.compile(".*word_embeddings.weight$")]
-    tp_block = tp.TensorParallel(block, devices, config=model_config, output_device=output_device, delay_init=True)
+    tp_config = None
+    tp_block = tp.TensorParallel(block, devices, config=tp_config, output_device=output_device, delay_init=True)
     total_heads = 0
     for tp_shard in tp_block.module_shards:
         for submodule in tp_shard.modules():

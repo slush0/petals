@@ -62,7 +62,6 @@ def load_pretrained_block(
     else:
         assert torch_dtype in DTYPE_MAP.values(), f"torch_dtype must be one of {list(DTYPE_MAP.values())}"
         block = block.to(dtype=torch_dtype)
-
     report = block.load_state_dict(state_dict, strict=True)
     logger.info(f"Loaded {converted_model_name_or_path} block {block_index}, {report}")
     return block

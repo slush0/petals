@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 class TransformerBackend(ModuleBackend):
     """A wrapper for a BLOOM block that can process requests for BLOOM layer forward, backward and inference"""
 
-    def __init__(self, *args, config: BloomConfig, memory_cache: MemoryCache, backend_dtype: torch.dtype, **kwargs):
+    def __init__(self, *args, config: LlamaConfig, memory_cache: MemoryCache, backend_dtype: torch.dtype, **kwargs):
         super().__init__(*args, **kwargs)
         assert isinstance(self.module, TensorParallel)
         self.config = config
@@ -68,6 +68,7 @@ class TransformerBackend(ModuleBackend):
 
         self.cache_bytes_per_token: Dict[torch.device, int] = Counter()
         for descr in self.get_inference_cache_descriptors(batch_size=1, max_length=1):
+            print("dtype", descr.dtype)
             self.cache_bytes_per_token[descr.device] += descr.numel() * torch.finfo(descr.dtype).bits // 8
 
     def get_inference_cache_descriptors(self, batch_size: int, max_length: int) -> Sequence[TensorDescriptor]:

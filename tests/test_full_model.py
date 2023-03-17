@@ -4,9 +4,9 @@ import transformers
 from hivemind import get_logger
 from test_utils import *
 from transformers.generation import BeamSearchScorer
-from transformers.models.bloom import BloomForCausalLM
+from transformers.models.llama import LlamaForCausalLM
 
-from petals.client.remote_model import DistributedBloomForCausalLM
+from petals.client.remote_model_llama import DistributedLlamaForCausalLM
 
 logger = get_logger(__name__)
 
@@ -14,13 +14,13 @@ logger = get_logger(__name__)
 @pytest.mark.forked
 @pytest.mark.parametrize("pass_empty_tensors", (True, False))
 def test_full_model_exact_match(pass_empty_tensors: bool, atol_forward=1e-3, atol_inference=1e-3):
-    tokenizer = transformers.BloomTokenizerFast.from_pretrained(MODEL_NAME)
-    model = DistributedBloomForCausalLM.from_pretrained(
+    tokenizer = transformers.LlamaTokenizerFast.from_pretrained(MODEL_NAME)
+    model = DistributedLlamaForCausalLM.from_pretrained(
         MODEL_NAME, initial_peers=INITIAL_PEERS, low_cpu_mem_usage=True, torch_dtype=torch.float32
     )
     config = model.config
-    assert isinstance(model, DistributedBloomForCausalLM)
-    assert len(model.transformer.h) == model.config.n_layer
+    assert isinstance(model, DistributedLlamaForCausalLM)
+    assert len(model.transformer.h) == model.config.num_hidden_layers
 
     test_inputs = tokenizer("A cat sat on a mat", return_tensors="pt")["input_ids"]
 
@@ -29,8 +29,8 @@ def test_full_model_exact_match(pass_empty_tensors: bool, atol_forward=1e-3, ato
         assert torch.all(torch.isfinite(parallel_outputs))
         logger.info("Forward outputs are finite")
 
-        embs = model.transformer.word_embeddings(test_inputs)
-        embs = model.transformer.word_embeddings_layernorm(embs)
+        embs = model.transformer.embed_tokens(test_inputs)
+        embs = model.transformer.norm(embs)
         recurrent_outputs = []
         with model.transformer.h.inference_session(max_length=embs.shape[1]) as sess:
             if pass_empty_tensors:
@@ -51,7 +51,7 @@ def test_full_model_exact_match(pass_empty_tensors: bool, atol_forward=1e-3, ato
         del model, embs, recurrent_outputs
 
         if REF_NAME:
-            ref_model = transformers.BloomForCausalLM.from_pretrained(
+            ref_model = transformers.LlamaForCausalLM.from_pretrained(
                 REF_NAME, low_cpu_mem_usage=True, torch_dtype=torch.float32
             )
             if config.vocab_size < ref_model.config.vocab_size:
@@ -72,8 +72,8 @@ def test_full_model_exact_match(pass_empty_tensors: bool, atol_forward=1e-3, ato
 
 @pytest.mark.forked
 def test_greedy_generation(max_new_tokens=4):
-    tokenizer = transformers.BloomTokenizerFast.from_pretrained(MODEL_NAME)
-    model = DistributedBloomForCausalLM.from_pretrained(
+    tokenizer = transformers.LlamaTokenizerFast.from_pretrained(MODEL_NAME)
+    model = DistributedLlamaForCausalLM.from_pretrained(
         MODEL_NAME, initial_peers=INITIAL_PEERS, low_cpu_mem_usage=True, torch_dtype=torch.float32
     )
     inputs = tokenizer("A cat sat on a mat", return_tensors="pt")["input_ids"]
@@ -81,7 +81,7 @@ def test_greedy_generation(max_new_tokens=4):
         inputs,
         max_new_tokens=max_new_tokens,
     )
-    hf_outputs = BloomForCausalLM.greedy_search(model, input_ids=inputs, max_length=inputs.size(1) + max_new_tokens)
+    hf_outputs = LlamaForCausalLM.greedy_search(model, input_ids=inputs, max_length=inputs.size(1) + max_new_tokens)
     assert torch.allclose(remote_outputs, hf_outputs), "Greedy search results are not identical to HF"
 
     inputs_batch = tokenizer(["A cat sat on a mat", "A dog sat on a mat"], return_tensors="pt", padding=True)[
@@ -91,7 +91,7 @@ def test_greedy_generation(max_new_tokens=4):
         inputs_batch,
         max_new_tokens=max_new_tokens,
     )
-    hf_outputs_batch = BloomForCausalLM.greedy_search(
+    hf_outputs_batch = LlamaForCausalLM.greedy_search(
         model, input_ids=inputs_batch, max_length=inputs_batch.size(1) + max_new_tokens
     )
     assert torch.allclose(
@@ -104,11 +104,11 @@ def test_greedy_generation(max_new_tokens=4):
 @pytest.mark.skip("Sampling is currently not consistent with outputs from Transformers")
 def test_sampling(sampling_options, max_new_tokens=4):
     torch.manual_seed(0)
-    tokenizer = transformers.BloomTokenizerFast.from_pretrained(MODEL_NAME)
-    model = DistributedBloomForCausalLM.from_pretrained(
+    tokenizer = transformers.LlamaTokenizerFast.from_pretrained(MODEL_NAME)
+    model = DistributedLlamaForCausalLM.from_pretrained(
         MODEL_NAME, initial_peers=INITIAL_PEERS, low_cpu_mem_usage=True, torch_dtype=torch.float32
     )
-    logits_warper = BloomForCausalLM._get_logits_warper(model, num_beams=1, **sampling_options)
+    logits_warper = LlamaForCausalLM._get_logits_warper(model, num_beams=1, **sampling_options)
     inputs = tokenizer("A cat sat on a mat", return_tensors="pt")["input_ids"]
     with torch.random.fork_rng():
         remote_outputs = model.generate(
@@ -118,7 +118,7 @@ def test_sampling(sampling_options, max_new_tokens=4):
             **sampling_options,
         )
     with torch.random.fork_rng():
-        hf_outputs = BloomForCausalLM.sample(
+        hf_outputs = LlamaForCausalLM.sample(
             model, input_ids=inputs, max_length=inputs.size(1) + max_new_tokens, logits_warper=logits_warper
         )
     assert torch.allclose(remote_outputs, hf_outputs), "Sampling results are not identical to HF"
@@ -134,7 +134,7 @@ def test_sampling(sampling_options, max_new_tokens=4):
             **sampling_options,
         )
     with torch.random.fork_rng():
-        hf_outputs_batch = BloomForCausalLM.sample(
+        hf_outputs_batch = LlamaForCausalLM.sample(
             model,
             input_ids=inputs_batch,
             max_length=inputs_batch.size(1) + max_new_tokens,
@@ -147,8 +147,8 @@ def test_sampling(sampling_options, max_new_tokens=4):
 
 @pytest.mark.forked
 def test_beam_search_generation(max_new_tokens=4, num_beams=2):
-    tokenizer = transformers.BloomTokenizerFast.from_pretrained(MODEL_NAME)
-    model = DistributedBloomForCausalLM.from_pretrained(
+    tokenizer = transformers.LlamaTokenizerFast.from_pretrained(MODEL_NAME)
+    model = DistributedLlamaForCausalLM.from_pretrained(
         MODEL_NAME, initial_peers=INITIAL_PEERS, low_cpu_mem_usage=True, torch_dtype=torch.float32
     )
     text = "A cat sat on a mat"
@@ -166,7 +166,7 @@ def test_beam_search_generation(max_new_tokens=4, num_beams=2):
         do_early_stopping=False,
     )
     hf_inputs = tokenizer([text] * 2, return_tensors="pt")["input_ids"]
-    hf_outputs = BloomForCausalLM.beam_search(
+    hf_outputs = LlamaForCausalLM.beam_search(
         model, input_ids=hf_inputs, max_length=inputs.size(1) + max_new_tokens, beam_scorer=beam_scorer
     )
     assert torch.allclose(remote_outputs, hf_outputs), "Beam search results are not identical to HF"
