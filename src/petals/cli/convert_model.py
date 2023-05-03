@@ -61,13 +61,9 @@ def main():
         model.resize_token_embeddings(args.resize_token_embeddings)
         config.vocab_size = args.resize_token_embeddings
 
-    #tokenizer = transformers.AutoTokenizer.from_pretrained(
-    #    args.model, use_auth_token=args.use_auth_token, revision=args.revision
-    #)
     tokenizer = transformers.AutoTokenizer.from_pretrained(
-        'bigscience/bloom-7b1', use_auth_token=args.use_auth_token, revision=args.revision
+        args.model, use_auth_token=args.use_auth_token, revision=args.revision
     )
-
     os.makedirs(args.output_path, exist_ok=True)
 
     repo = Repository(args.output_path, clone_from=args.output_repo, use_auth_token=args.use_auth_token)
