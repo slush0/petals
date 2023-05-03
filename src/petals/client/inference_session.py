@@ -103,8 +103,12 @@ class _ServerInferenceSession:
             assert len(hypo_ids) == len(new_hidden_states)
             assert hypo_ids.dtype == torch.int64
 
+        import traceback
+        print(traceback.format_stack())
         # serialize inputs and put them into the queue
         inputs = (new_hidden_states, prompts, hypo_ids)
+        print("new_hidden_states", new_hidden_states)
+        print("dtype", new_hidden_states.dtype)
         outputs_serialized = RemoteExpertWorker.run_coroutine(
             self._step(
                 runtime_pb2.ExpertRequest(

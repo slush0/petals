@@ -411,7 +411,8 @@ class ModuleContainer(threading.Thread):
                 )
                 block = convert_block(block, block_config, tensor_parallel_devices, device, load_in_8bit, freeze=True)
 
-                backend_dtype = next(block.parameters()).dtype if torch_dtype == "auto" else torch_dtype
+                #backend_dtype = next(block.parameters()).dtype if torch_dtype == "auto" else torch_dtype
+                backend_dtype = torch.float16 # FIXME This is constant per model, can we load from config?
                 blocks[module_uid] = TransformerBackend(
                     module_uid,
                     block,

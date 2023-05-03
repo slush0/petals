@@ -15,6 +15,7 @@ logger = get_logger(__name__)
 
 @pytest.mark.forked
 def test_remote_sequential():
+    print("Start")
     config = DistributedLlamaConfig.from_pretrained(MODEL_NAME, initial_peers=INITIAL_PEERS)
     dht = DHT(initial_peers=config.initial_peers, client_mode=True, start=True)
     test_inputs = torch.randn(1, 5, config.hidden_size, requires_grad=True)

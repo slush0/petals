@@ -38,7 +38,7 @@ class RemoteGenerationMixin:
                            to calculate the size of attention caches allocated to this client.
         """
 
-        return self.transformer.h.inference_session(**kwargs)
+        return self.transformer.layers.inference_session(**kwargs)
 
     @torch.inference_mode()
     def generate(
@@ -80,7 +80,6 @@ class RemoteGenerationMixin:
         :param model_kwargs: Additional arguments to pass to the model.
         :param num_return_sequences: How many hypothesis from the beam will be in output.
         """
-
         assert (
             model_kwargs.get("logits_processor", None) is None
         ), "For RemoteGenerationMixin models use BloomConstraints instead of logits_processor"
@@ -132,6 +131,7 @@ class RemoteGenerationMixin:
                     logger.warning("You passed top_k or top_p but did not pass do_sample=True. Running greedy sampling")
                 decoding_algorithm = GreedyAlgorithm()
 
+        print("DECODING ALGO", decoding_algorithm)
         if num_beams > 1:
             inputs = torch.cat([inputs] * num_beams, dim=0)
             if batch_size > 1:
@@ -155,7 +155,7 @@ class RemoteGenerationMixin:
             pad_token_id=pad_token_id,
             provided_constraints=provided_constraints,
         )
-
+        
         if session is None:
             context_manager = self.inference_session(max_length=max_length)
         else:
@@ -172,16 +172,25 @@ class RemoteGenerationMixin:
             seq_idx = outputs[0].size(1)
             hypo_ids = torch.arange(outputs[0].size(0))
             while True:
+                print("PRE EMBED TOKENS", outputs[-1])
+                #print("XXX", self.transformer.embed_tokens)
+                torch.cuda.manual_seed_all(42)
+                torch.manual_seed(42)
                 hidden_state = self.transformer.embed_tokens(outputs[-1])
+                #hidden_state = self.transformer.xxx(outputs[-1])
+                #hidden_state = torch.nn.Embedding(32000, 4096, 0).to('cpu')(outputs[-1])
+                print("INPUT EMBEDS", hidden_state)
+
                 intermediate_prompts = None
                 if self.config.pre_seq_len > 0 and len(outputs) == 1:
                     prompts, intermediate_prompts = self.transformer.get_prompt(hidden_state.size(0))
                     hidden_state = torch.cat([prompts, hidden_state], dim=1)
-                hidden_state = self.transformer.norm(hidden_state)
+                # hidden_state = self.transformer.input_layernorm(hidden_state)
+                # FIXME
 
                 hidden_state = session.step(hidden_state, prompts=intermediate_prompts, hypo_ids=hypo_ids)[:, -1]
 
-                hidden_state = self.transformer.ln_f(hidden_state)
+                hidden_state = self.transformer.norm(hidden_state)
                 lm_logits = self.lm_head(hidden_state)
 
                 for constraint in constraints:

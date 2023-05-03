@@ -68,7 +68,6 @@ class TransformerBackend(ModuleBackend):
 
         self.cache_bytes_per_token: Dict[torch.device, int] = Counter()
         for descr in self.get_inference_cache_descriptors(batch_size=1, max_length=1):
-            print("dtype", descr.dtype)
             self.cache_bytes_per_token[descr.device] += descr.numel() * torch.finfo(descr.dtype).bits // 8
 
     def get_inference_cache_descriptors(self, batch_size: int, max_length: int) -> Sequence[TensorDescriptor]:
@@ -91,9 +90,10 @@ class TransformerBackend(ModuleBackend):
         assert hidden_states.ndim == 3, "expected hidden states to be 3-dimensional: [batch_size, seq_len, hid_size]"
         with self.memory_cache.use_cache(*inference_info.cache_handles) as cache_tensors:
             self._reorder_cache_inplace(cache_tensors, hypo_ids)
-            layer_past = self._select_layer_past(cache_tensors, inference_info.prefix_length)
+            #layer_past = self._select_layer_past(cache_tensors, inference_info.prefix_length)
+            layer_past = None # FIXME
             hidden_states, new_kvs = self.module.forward(hidden_states, layer_past=layer_past, use_cache=True)
-            self._update_cache_inplace(cache_tensors, new_kvs, inference_info.prefix_length)
+            # self._update_cache_inplace(cache_tensors, new_kvs, inference_info.prefix_length)
             return (hidden_states,)
 
     def _reorder_cache_inplace(self, cache_tensors: torch.Tensor, hypo_ids: torch.Tensor):
@@ -174,5 +174,6 @@ class _MergedInferenceStep:
         for inference_info, optional_prompt in zip(inference_infos, optional_prompts):
             if optional_prompt is not None:
                 hidden_states[:, : optional_prompt.shape[1]] += optional_prompt
+            print("BACKEND HIDDEN STATES", hidden_states)
             (hidden_states,) = self.backends[inference_info.uid].inference_step(hidden_states, hypo_ids, inference_info)
         return (hidden_states,)

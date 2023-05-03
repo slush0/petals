@@ -42,7 +42,6 @@ def convert_block(
     :return: a module that acts like the original block, but runs with all specified optimizations
 
     """
-    #torch.save(block, open("shard.bin", "wb"))
     if freeze:
         for param in block.parameters():
             param.requires_grad = False
@@ -51,11 +50,9 @@ def convert_block(
 
     if load_in_8bit:
         block = replace_8bit_linear(block, threshold=threshold)
-    x = next(block.parameters())
-    print("convert block1", x.dtype)
     for shard, device in zip(block.module_shards, block.devices):
         shard.to(device)
-    print("convert block2", x.dtype)
+
     return block
 
 

@@ -124,7 +124,7 @@ class DistributedLlamaModel(_LowCPUMemoryMixin, LlamaModel):
             dht,
             config.dht_prefix,
         )
-        self.h = self.layers # For compatibility with RemoteGeneration
+        #self.h = self.layers # For compatibility with RemoteGeneration
 
         # Forbid accumulate grads for embeddings and layernorm
         self.set_requires_grad(False)
